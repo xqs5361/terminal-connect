@@ -1,1 +1,1 @@
-# terminal-connect
+# terminal-privacy
