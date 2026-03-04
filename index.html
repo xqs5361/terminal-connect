@@ -815,17 +815,27 @@
     resetBtn.addEventListener('click', resetFilters);
 
     // ---------- 解密与初始化流程 ----------
+    // 修改后的 loadAndDecrypt 函数，增加异常捕获处理密码错误
     async function loadAndDecrypt(key) {
         try {
             const res = await fetch('data.json');
             if (!res.ok) throw new Error(`无法获取数据文件 (HTTP ${res.status})`);
             const encrypted = await res.text();
-            const bytes = CryptoJS.AES.decrypt(encrypted, key);
-            const decrypted = bytes.toString(CryptoJS.enc.Utf8);
-            if (!decrypted) throw new Error('解密失败：密码错误或数据损坏');
+
+            // 解密并处理异常
+            let decrypted;
+            try {
+                const bytes = CryptoJS.AES.decrypt(encrypted, key);
+                decrypted = bytes.toString(CryptoJS.enc.Utf8);
+                if (!decrypted) throw new Error('空结果');
+            } catch (e) {
+                // 捕获 Malformed UTF-8 data 及其他解密错误
+                throw new Error('密码错误或数据损坏');
+            }
+
             return JSON.parse(decrypted);
         } catch (e) {
-            throw e;
+            throw e; // 重新抛出，由上层处理
         }
     }
 
