@@ -174,7 +174,7 @@
             gap: 8px;
             margin-bottom: 20px;
         }
-        .filter-select {
+        .filter-input {
             flex: 1 0 calc(50% - 8px);
             background: white;
             border: 1px solid #dde3e9;
@@ -183,18 +183,10 @@
             font-size: 0.9rem;
             color: #1e293b;
             outline: none;
-            appearance: none;
-            background-image: url('data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="%234b5e71" stroke-width="2"><polyline points="6 9 12 15 18 9"/></svg>');
-            background-repeat: no-repeat;
-            background-position: right 12px center;
-            background-size: 16px;
-            cursor: pointer;
-            transition: border-color 0.1s;
+            width: 100%;
         }
-        .filter-select:focus { border-color: #3b82f6; }
-        .filter-select.custom-active {
+        .filter-input:focus {
             border-color: #3b82f6;
-            border-width: 2px;
         }
         .stats-wrapper {
             display: flex;
@@ -461,16 +453,23 @@
             </div>
         </div>
 
-        <!-- 多维度分类筛选 (下拉) 双击可输入自定义模糊筛选词 -->
+        <!-- 多维度分类筛选 (可搜索输入框) -->
         <div class="card" style="padding: 16px 14px;">
-            <div style="font-weight: 500; margin-bottom: 12px; color: #1e405d;">📌 按条件筛选（双击输入模糊词）</div>
+            <div style="font-weight: 500; margin-bottom: 12px; color: #1e405d;">📌 按条件筛选（输入关键词）</div>
             <div class="filter-row">
-                <select id="filterQu" class="filter-select"><option value="">区县局(全部)</option></select>
-                <select id="filterSubstation" class="filter-select"><option value="">变电站(全部)</option></select>
+                <input type="text" id="filterQu" class="filter-input" placeholder="区县局(全部)" list="quList">
+                <datalist id="quList"></datalist>
+                <input type="text" id="filterSubstation" class="filter-input" placeholder="变电站(全部)" list="substationList">
+                <datalist id="substationList"></datalist>
             </div>
             <div class="filter-row">
-                <select id="filterFeeder" class="filter-select"><option value="">线路名称(全部)</option></select>
-                <select id="filterStatus" class="filter-select"><option value="">投运状态(全部)</option></select>
+                <input type="text" id="filterFeeder" class="filter-input" placeholder="线路名称(全部)" list="feederList">
+                <datalist id="feederList"></datalist>
+                <input type="text" id="filterStatus" class="filter-input" placeholder="投运状态(全部)" list="statusList">
+                <datalist id="statusList">
+                    <option value="已投运">
+                    <option value="未投运">
+                </datalist>
             </div>
             <div style="display: flex; gap: 8px; margin-top: 8px;">
                 <span class="pill special" id="resetFiltersBtn">⟲ 重置所有筛选</span>
@@ -499,7 +498,6 @@
     let filteredData = [];           // 筛选后的数据
     let currentPage = 0;
     const PAGE_SIZE = 20;
-    let customFilters = {};          // 自定义模糊筛选
     let chart;                       // 图表实例
 
     // ---------- DOM 元素 ----------
@@ -524,77 +522,33 @@
     const modalTitle = document.getElementById('modalTitle');
     const modalContent = document.getElementById('modalContent');
 
-    // ---------- 工具函数：填充下拉框等 (依赖 fullData) ----------
+    // 对应的 datalist 元素
+    const quList = document.getElementById('quList');
+    const substationList = document.getElementById('substationList');
+    const feederList = document.getElementById('feederList');
+
+    // ---------- 工具函数：填充下拉选项 (依赖 fullData) ----------
     function populateFilters() {
-        const unique = (field) => [...new Set(fullData.map(d => d[field]).filter(v => v))].sort();
+        // 提取唯一值（去空、去重、排序）
+        const unique = (field) => [...new Set(fullData.map(d => d[field]).filter(v => v && v.trim() !== ''))].sort();
 
         const qus = unique('区县局');
-        filterQu.innerHTML = '<option value="">区县局(全部)</option>' + qus.map(v => `<option value="${v}">${v}</option>`).join('');
+        quList.innerHTML = qus.map(v => `<option value="${v}">`).join('');
 
         const substations = unique('变电站名称');
-        filterSubstation.innerHTML = '<option value="">变电站(全部)</option>' + substations.map(v => `<option value="${v}">${v}</option>`).join('');
+        substationList.innerHTML = substations.map(v => `<option value="${v}">`).join('');
 
         const feeders = unique('线路名称');
-        filterFeeder.innerHTML = '<option value="">线路名称(全部)</option>' + feeders.map(v => `<option value="${v}">${v}</option>`).join('');
-
-        // 状态固定两种
-        filterStatus.innerHTML = '<option value="">投运状态(全部)</option><option value="已投运">已投运</option><option value="未投运">未投运</option>';
-    }
-
-    // 初始化双击事件（自定义模糊筛选）
-    function initDoubleClick() {
-        const filters = [
-            { el: filterQu, field: '区县局' },
-            { el: filterSubstation, field: '变电站名称' },
-            { el: filterFeeder, field: '线路名称' },
-            { el: filterStatus, field: '投运状态' }
-        ];
-        filters.forEach(f => {
-            f.el.addEventListener('dblclick', (e) => {
-                e.preventDefault();
-                const currentVal = customFilters[f.field] || '';
-                const input = prompt(`请输入要模糊筛选的${f.field}（留空清除）:`, currentVal);
-                if (input !== null) {
-                    if (input.trim() === '') {
-                        delete customFilters[f.field];
-                    } else {
-                        customFilters[f.field] = input.trim();
-                    }
-                    // 清空对应的下拉选择值，避免冲突
-                    f.el.value = '';
-                    applyFilters();
-                    updateCustomFilterUI();
-                }
-            });
-        });
-    }
-
-    // 更新自定义筛选的视觉提示（边框变蓝 + title提示）
-    function updateCustomFilterUI() {
-        const filters = [
-            { el: filterQu, field: '区县局' },
-            { el: filterSubstation, field: '变电站名称' },
-            { el: filterFeeder, field: '线路名称' },
-            { el: filterStatus, field: '投运状态' }
-        ];
-        filters.forEach(f => {
-            if (customFilters[f.field]) {
-                f.el.classList.add('custom-active');
-                f.el.title = `自定义模糊筛选: ${customFilters[f.field]}`;
-            } else {
-                f.el.classList.remove('custom-active');
-                f.el.title = '';
-            }
-        });
+        feederList.innerHTML = feeders.map(v => `<option value="${v}">`).join('');
     }
 
     // 根据所有筛选条件过滤数据
     function filterData() {
         const searchTerm = searchInput.value.trim().toLowerCase();
-        const qu = filterQu.value;
-        const substation = filterSubstation.value;
-        const feeder = filterFeeder.value;
-        const status = filterStatus.value;
+        const qu = filterQu.value.trim();
+        const substation = filterSubstation.value.trim();
+        const feeder = filterFeeder.value.trim();
+        const status = filterStatus.value.trim();
 
         return fullData.filter(item => {
             // 全局搜索（安装地点/IP）
@@ -604,17 +558,14 @@
                 if (!locMatch && !ipMatch) return false;
             }
 
-            // 自定义模糊筛选
-            if (customFilters.区县局 && !item.区县局.includes(customFilters.区县局)) return false;
-            if (customFilters.变电站名称 && !item.变电站名称.includes(customFilters.变电站名称)) return false;
-            if (customFilters.线路名称 && !item.线路名称.includes(customFilters.线路名称)) return false;
-            if (customFilters.投运状态 && !item.投运状态.includes(customFilters.投运状态)) return false;
-
-            // 下拉精确筛选（仅当该字段没有自定义筛选时生效）
-            if (!customFilters.区县局 && qu && item.区县局 !== qu) return false;
-            if (!customFilters.变电站名称 && substation && item.变电站名称 !== substation) return false;
-            if (!customFilters.线路名称 && feeder && item.线路名称 !== feeder) return false;
-            if (!customFilters.投运状态 && status && item.投运状态 !== status) return false;
+            // 区县局模糊匹配
+            if (qu && !item.区县局.toLowerCase().includes(qu.toLowerCase())) return false;
+            // 变电站模糊匹配
+            if (substation && !item.变电站名称.toLowerCase().includes(substation.toLowerCase())) return false;
+            // 线路名称模糊匹配
+            if (feeder && !item.线路名称.toLowerCase().includes(feeder.toLowerCase())) return false;
+            // 投运状态模糊匹配（但状态只有两种，精确匹配更合适，但模糊也无妨）
+            if (status && !item.投运状态.toLowerCase().includes(status.toLowerCase())) return false;
 
             return true;
         });
@@ -666,9 +617,7 @@
         filterSubstation.value = '';
         filterFeeder.value = '';
         filterStatus.value = '';
-        customFilters = {};
         applyFilters();
-        updateCustomFilterUI();
     }
 
     // 应用筛选，重置分页
@@ -679,7 +628,6 @@
         updateStats(filteredData);
         updateCounter();
         updateLoadMoreButton();
-        updateCustomFilterUI();
     }
 
     // 渲染列表（当前页）
@@ -808,14 +756,15 @@
     // ---------- 事件绑定（主界面控件）----------
     searchBtn.addEventListener('click', () => applyFilters());
     searchInput.addEventListener('keypress', (e) => { if (e.key === 'Enter') applyFilters(); });
-    filterQu.addEventListener('change', applyFilters);
-    filterSubstation.addEventListener('change', applyFilters);
-    filterFeeder.addEventListener('change', applyFilters);
-    filterStatus.addEventListener('change', applyFilters);
+    // 筛选输入框实时响应
+    filterQu.addEventListener('input', applyFilters);
+    filterSubstation.addEventListener('input', applyFilters);
+    filterFeeder.addEventListener('input', applyFilters);
+    filterStatus.addEventListener('input', applyFilters);
     resetBtn.addEventListener('click', resetFilters);
 
     // ---------- 解密与初始化流程 ----------
-    // 修改后的 loadAndDecrypt 函数，增加异常捕获处理密码错误
+    // 增强解密错误处理
     async function loadAndDecrypt(key) {
         try {
             const res = await fetch('data.json');
@@ -835,7 +784,7 @@
 
             return JSON.parse(decrypted);
         } catch (e) {
-            throw e; // 重新抛出，由上层处理
+            throw e;
         }
     }
 
@@ -843,23 +792,22 @@
     async function startAppWithKey(key) {
         try {
             const data = await loadAndDecrypt(key);
-            // 数据格式化：添加投运状态字段
+            // 数据清洗：去除字段首尾空格
             fullData = data.map(item => ({
-                区县局: item.区县局 || '',
-                变电站名称: item.变电站名称 || '',
-                线路名称: item.线路名称 || '',
-                安装地点: item.安装地点 || '',
-                IP: item.IP || '',
-                '开关信息-终端信息': item['开关信息-终端信息'] || '',
-                终端投运日期: item.终端投运日期 || ''
+                区县局: (item.区县局 || '').trim(),
+                变电站名称: (item.变电站名称 || '').trim(),
+                线路名称: (item.线路名称 || '').trim(),
+                安装地点: (item.安装地点 || '').trim(),
+                IP: (item.IP || '').trim(),
+                '开关信息-终端信息': (item['开关信息-终端信息'] || '').trim(),
+                终端投运日期: (item.终端投运日期 || '').trim()
             }));
             fullData.forEach(item => {
-                item.投运状态 = (item.终端投运日期 && item.终端投运日期.trim() !== '') ? '已投运' : '未投运';
+                item.投运状态 = (item.终端投运日期 && item.终端投运日期 !== '') ? '已投运' : '未投运';
             });
 
             // 初始化界面
             populateFilters();
-            initDoubleClick();
             applyFilters();  // 内部会调用 renderList, updateStats 等
 
             // 切换显示
@@ -870,6 +818,10 @@
             passwordError.innerText = e.message;
             // 密码错误时清除本地存储的密钥
             localStorage.removeItem('SECRET_KEY');
+            // 恢复按钮状态（由 finally 处理）
+        } finally {
+            passwordSubmit.disabled = false;
+            passwordSubmit.innerText = '确认';
         }
     }
 
@@ -880,8 +832,12 @@
             passwordError.innerText = '密码不能为空';
             return;
         }
+        // 显示加载状态
+        passwordSubmit.disabled = true;
+        passwordSubmit.innerText = '解密中...';
+        passwordError.innerText = '';
+
         localStorage.setItem('SECRET_KEY', key);
-        passwordError.innerText = ''; // 清空错误
         startAppWithKey(key);
     }
 
@@ -891,8 +847,7 @@
         if (savedKey) {
             passwordInput.value = savedKey;  // 可选，回显
             startAppWithKey(savedKey).catch(() => {
-                // 自动登录失败时，不清除密钥？由 startAppWithKey 内部清除
-                // 但为了体验，保留密码卡片供重新输入
+                // 自动登录失败时，保留密码卡片
                 passwordCard.classList.remove('hidden');
                 mainContent.classList.add('hidden');
             });
