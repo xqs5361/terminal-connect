@@ -93,6 +93,10 @@
         .password-btn:active {
             background: #1d4ed8;
         }
+        .password-btn:disabled {
+            opacity: 0.6;
+            cursor: not-allowed;
+        }
         .password-hint {
             color: #64748b;
             font-size: 0.85rem;
@@ -453,23 +457,16 @@
             </div>
         </div>
 
-        <!-- 多维度分类筛选 (可搜索输入框) -->
+        <!-- 多维度分类筛选 (普通输入框，模糊匹配) -->
         <div class="card" style="padding: 16px 14px;">
             <div style="font-weight: 500; margin-bottom: 12px; color: #1e405d;">📌 按条件筛选（输入关键词）</div>
             <div class="filter-row">
-                <input type="text" id="filterQu" class="filter-input" placeholder="区县局(全部)" list="quList">
-                <datalist id="quList"></datalist>
-                <input type="text" id="filterSubstation" class="filter-input" placeholder="变电站(全部)" list="substationList">
-                <datalist id="substationList"></datalist>
+                <input type="text" id="filterQu" class="filter-input" placeholder="区县局(输入关键词)">
+                <input type="text" id="filterSubstation" class="filter-input" placeholder="变电站(输入关键词)">
             </div>
             <div class="filter-row">
-                <input type="text" id="filterFeeder" class="filter-input" placeholder="线路名称(全部)" list="feederList">
-                <datalist id="feederList"></datalist>
-                <input type="text" id="filterStatus" class="filter-input" placeholder="投运状态(全部)" list="statusList">
-                <datalist id="statusList">
-                    <option value="已投运">
-                    <option value="未投运">
-                </datalist>
+                <input type="text" id="filterFeeder" class="filter-input" placeholder="线路名称(输入关键词)">
+                <input type="text" id="filterStatus" class="filter-input" placeholder="投运状态(输入关键词)">
             </div>
             <div style="display: flex; gap: 8px; margin-top: 8px;">
                 <span class="pill special" id="resetFiltersBtn">⟲ 重置所有筛选</span>
@@ -500,6 +497,15 @@
     const PAGE_SIZE = 20;
     let chart;                       // 图表实例
 
+    // 防抖函数
+    function debounce(func, wait) {
+        let timeout;
+        return function(...args) {
+            clearTimeout(timeout);
+            timeout = setTimeout(() => func.apply(this, args), wait);
+        };
+    }
+
     // ---------- DOM 元素 ----------
     const passwordCard = document.getElementById('passwordCard');
     const passwordInput = document.getElementById('passwordInput');
@@ -522,27 +528,7 @@
     const modalTitle = document.getElementById('modalTitle');
     const modalContent = document.getElementById('modalContent');
 
-    // 对应的 datalist 元素
-    const quList = document.getElementById('quList');
-    const substationList = document.getElementById('substationList');
-    const feederList = document.getElementById('feederList');
-
-    // ---------- 工具函数：填充下拉选项 (依赖 fullData) ----------
-    function populateFilters() {
-        // 提取唯一值（去空、去重、排序）
-        const unique = (field) => [...new Set(fullData.map(d => d[field]).filter(v => v && v.trim() !== ''))].sort();
-
-        const qus = unique('区县局');
-        quList.innerHTML = qus.map(v => `<option value="${v}">`).join('');
-
-        const substations = unique('变电站名称');
-        substationList.innerHTML = substations.map(v => `<option value="${v}">`).join('');
-
-        const feeders = unique('线路名称');
-        feederList.innerHTML = feeders.map(v => `<option value="${v}">`).join('');
-    }
-
-    // 根据所有筛选条件过滤数据
+    // ---------- 筛选函数 ----------
     function filterData() {
         const searchTerm = searchInput.value.trim().toLowerCase();
         const qu = filterQu.value.trim();
@@ -564,7 +550,7 @@
             if (substation && !item.变电站名称.toLowerCase().includes(substation.toLowerCase())) return false;
             // 线路名称模糊匹配
             if (feeder && !item.线路名称.toLowerCase().includes(feeder.toLowerCase())) return false;
-            // 投运状态模糊匹配（但状态只有两种，精确匹配更合适，但模糊也无妨）
+            // 投运状态模糊匹配
             if (status && !item.投运状态.toLowerCase().includes(status.toLowerCase())) return false;
 
             return true;
@@ -754,31 +740,31 @@
     }
 
     // ---------- 事件绑定（主界面控件）----------
-    searchBtn.addEventListener('click', () => applyFilters());
+    // 搜索按钮和回车
+    searchBtn.addEventListener('click', applyFilters);
     searchInput.addEventListener('keypress', (e) => { if (e.key === 'Enter') applyFilters(); });
-    // 筛选输入框实时响应
-    filterQu.addEventListener('input', applyFilters);
-    filterSubstation.addEventListener('input', applyFilters);
-    filterFeeder.addEventListener('input', applyFilters);
-    filterStatus.addEventListener('input', applyFilters);
+
+    // 筛选输入框使用防抖，避免频繁筛选
+    const debouncedApply = debounce(applyFilters, 300);
+    filterQu.addEventListener('input', debouncedApply);
+    filterSubstation.addEventListener('input', debouncedApply);
+    filterFeeder.addEventListener('input', debouncedApply);
+    filterStatus.addEventListener('input', debouncedApply);
     resetBtn.addEventListener('click', resetFilters);
 
     // ---------- 解密与初始化流程 ----------
-    // 增强解密错误处理
     async function loadAndDecrypt(key) {
         try {
             const res = await fetch('data.json');
             if (!res.ok) throw new Error(`无法获取数据文件 (HTTP ${res.status})`);
             const encrypted = await res.text();
 
-            // 解密并处理异常
             let decrypted;
             try {
                 const bytes = CryptoJS.AES.decrypt(encrypted, key);
                 decrypted = bytes.toString(CryptoJS.enc.Utf8);
                 if (!decrypted) throw new Error('空结果');
             } catch (e) {
-                // 捕获 Malformed UTF-8 data 及其他解密错误
                 throw new Error('密码错误或数据损坏');
             }
 
@@ -788,7 +774,6 @@
         }
     }
 
-    // 使用密钥启动应用
     async function startAppWithKey(key) {
         try {
             const data = await loadAndDecrypt(key);
@@ -806,9 +791,7 @@
                 item.投运状态 = (item.终端投运日期 && item.终端投运日期 !== '') ? '已投运' : '未投运';
             });
 
-            // 初始化界面
-            populateFilters();
-            applyFilters();  // 内部会调用 renderList, updateStats 等
+            applyFilters();  // 初始化筛选和渲染
 
             // 切换显示
             passwordCard.classList.add('hidden');
@@ -816,16 +799,13 @@
         } catch (e) {
             console.error(e);
             passwordError.innerText = e.message;
-            // 密码错误时清除本地存储的密钥
             localStorage.removeItem('SECRET_KEY');
-            // 恢复按钮状态（由 finally 处理）
         } finally {
             passwordSubmit.disabled = false;
             passwordSubmit.innerText = '确认';
         }
     }
 
-    // 处理密码提交
     function handlePasswordSubmit() {
         const key = passwordInput.value.trim();
         if (!key) {
@@ -841,28 +821,23 @@
         startAppWithKey(key);
     }
 
-    // 检查本地存储是否有密钥，有则直接尝试登录
     function tryAutoLogin() {
         const savedKey = localStorage.getItem('SECRET_KEY');
         if (savedKey) {
-            passwordInput.value = savedKey;  // 可选，回显
+            passwordInput.value = savedKey;
             startAppWithKey(savedKey).catch(() => {
-                // 自动登录失败时，保留密码卡片
                 passwordCard.classList.remove('hidden');
                 mainContent.classList.add('hidden');
             });
         }
     }
 
-    // 绑定密码提交事件
     passwordSubmit.addEventListener('click', handlePasswordSubmit);
     passwordInput.addEventListener('keypress', (e) => {
         if (e.key === 'Enter') handlePasswordSubmit();
     });
 
-    // 启动自动登录尝试（如果本地有密钥）
     tryAutoLogin();
-    // 如果没有密钥，密码卡片自然显示
 })();
 </script>
 </body>
